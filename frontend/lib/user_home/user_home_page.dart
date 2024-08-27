@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:dio/dio.dart'; // For the Dio HTTP client
-import 'package:frontend/user_home/user_home_bloc/user_home_bloc.dart'; // Path to your BLoC file
-import 'package:frontend/user_home/user_home_bloc/user_home_event.dart'; // Path to your events file
-import 'package:frontend/user_home/user_home_bloc/user_home_state.dart'; // Path to your states file
-import 'package:frontend/user_home/user_home_repository.dart'; // Path to your repository file
-import 'package:frontend/models/group.dart'; // Path to your Group model
-import 'package:frontend/create_group/create_group_bloc/create_group_bloc.dart'; // Path to CreateGroupBloc
-import 'package:frontend/create_group/create_group_repo.dart'; // Path to CreateGroupRepo
-import 'package:frontend/create_group/create_group_page.dart'; // Path to CreateGroupPage
+import 'package:dio/dio.dart';
+import 'package:frontend/user_home/user_home_bloc/user_home_bloc.dart';
+import 'package:frontend/user_home/user_home_bloc/user_home_event.dart';
+import 'package:frontend/user_home/user_home_bloc/user_home_state.dart';
+import 'package:frontend/user_home/user_home_repository.dart';
+import 'package:frontend/create_group/create_group_bloc/create_group_bloc.dart';
+import 'package:frontend/create_group/create_group_repo.dart';
+import 'package:frontend/create_group/create_group_page.dart';
+import 'package:frontend/group_details/group_details_page.dart';
+import 'package:frontend/logout/logout_bloc/logout_bloc.dart';
+import 'package:frontend/logout/logout_bloc/logout_event.dart';
+import 'package:frontend/logout/logout_bloc/logout_state.dart';
+import 'package:frontend/logout/logout_repo.dart';
 
 class UserHomePage extends StatelessWidget {
   final String userName;
@@ -19,17 +23,60 @@ class UserHomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final dio = Dio();
     final userHomeRepository = UserHomeRepository(dio: dio);
-    final createGroupRepository =  CreateGroupRepository(dio: dio);
+    final createGroupRepository = CreateGroupRepository(dio: dio);
+    final logoutRepository = LogoutRepository(dio: dio);
 
-    return BlocProvider(
-      create: (context) => UserHomeBloc(userHomeRepository: userHomeRepository)
-        ..add(FetchUserGroups()),
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(
+          create: (context) => UserHomeBloc(userHomeRepository: userHomeRepository)..add(FetchUserGroups()),
+        ),
+        BlocProvider(
+          create: (context) => LogoutBloc(logoutRepository: logoutRepository),
+        ),
+      ],
       child: Scaffold(
         backgroundColor: Colors.black,
         appBar: AppBar(
           title: Text('Welcome $userName'),
           backgroundColor: Color(0xFF708090), // Slate gray color
           automaticallyImplyLeading: false, // Removes the back icon
+          actions: [
+            BlocConsumer<LogoutBloc, LogoutState>(
+              listener: (context, state) {
+                if (state is LogoutSuccess) {
+                  // Navigate to the sign-in page after successful logout
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Logged out successfully')),
+                  );
+                  Navigator.pop(context);
+                } else if (state is LogoutFailure) {
+                  // Show an error message
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(state.error)),
+                  );
+                }
+              },
+              builder: (context, state) {
+                return PopupMenuButton<String>(
+                  onSelected: (value) {
+                    if (value == 'Logout') {
+                      BlocProvider.of<LogoutBloc>(context).add(PerformLogout());
+                    }
+                  },
+                  itemBuilder: (BuildContext context) {
+                    return {'Logout'}.map((String choice) {
+                      return PopupMenuItem<String>(
+                        value: choice,
+                        child: Text(choice)
+
+                      );
+                    }).toList();
+                  },
+                );
+              },
+            ),
+          ],
         ),
         body: BlocBuilder<UserHomeBloc, UserHomeState>(
           builder: (context, state) {
@@ -37,7 +84,9 @@ class UserHomePage extends StatelessWidget {
               return Center(child: CircularProgressIndicator());
             } else if (state is UserHomeLoaded) {
               if (state.groups.isEmpty) {
-                return Center(child: Text('No groups found.', style: TextStyle(color: Colors.white)));
+                return Center(
+                  child: Text('No groups found.', style: TextStyle(color: Colors.white)),
+                );
               } else {
                 return ListView.builder(
                   itemCount: state.groups.length,
@@ -56,13 +105,19 @@ class UserHomePage extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(group.description, style: TextStyle(color: Colors.white70)),
-                              Text('Group created by ${group.adminName}', style: TextStyle(color: Colors.white70)),
-                              // Adjusted text for placeholder
-                              Text('You owe amount in rupees', style: TextStyle(color: Colors.white70)),
+                              Text('Group created by ${group.adminName}',
+                                  style: TextStyle(color: Colors.white70)),
+                              Text('You owe amount in rupees',
+                                  style: TextStyle(color: Colors.white70)),
                             ],
                           ),
                           onTap: () {
-                            // Add navigation logic here if needed
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => GroupDetailsPage(groupName: group.name),
+                              ),
+                            );
                           },
                         ),
                       ),
@@ -71,7 +126,9 @@ class UserHomePage extends StatelessWidget {
                 );
               }
             } else if (state is UserHomeError) {
-              return Center(child: Text(state.message, style: TextStyle(color: Colors.red)));
+              return Center(
+                child: Text(state.message, style: TextStyle(color: Colors.red)),
+              );
             }
             return Container();
           },
@@ -82,14 +139,15 @@ class UserHomePage extends StatelessWidget {
               context,
               MaterialPageRoute(
                 builder: (context) => BlocProvider(
-                  create: (context) => CreateGroupBloc(createGroupRepository: CreateGroupRepository(dio: dio)),
+                  create: (context) => CreateGroupBloc(createGroupRepository: createGroupRepository),
                   child: CreateGroupPage(),
                 ),
               ),
             );
           },
-          icon: Icon(Icons.add),
-          label: Text('Create group'),
+          backgroundColor: Colors.cyan,
+          icon: Icon(Icons.add, color: Colors.white),
+          label: Text('Create group', style: TextStyle(color: Colors.white)),
         ),
       ),
     );
